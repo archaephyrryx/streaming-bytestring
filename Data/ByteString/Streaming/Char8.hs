@@ -651,20 +651,33 @@ lineSplit !n0 text0 = loop1 0 text0
         Empty r -> Empty (Return r)
         Go m -> Go $ liftM (loop2 counter) m
         Chunk c cs ->
-          let !numNewlines = B.count newline c
-              !newCounter = counter + numNewlines
-           in if newCounter >= n
-                then case Prelude.drop (n - counter - 1) (B.elemIndices newline c) of
-                  i : _ ->
-                    let !j = i + 1
-                     in Chunk (B.unsafeTake j c) (Empty (loop1 0 (Chunk (B.unsafeDrop j c) cs)))
-                  -- the empty list cannot happen unless Data.ByteString.count or
-                  -- Data.ByteString.findIndices is misimplemented. The expression
-                  -- that handles this case is only here to satisfy the type
-                  -- checker.
-                  [] -> loop2 0 cs
-                else Chunk c (loop2 newCounter cs)
-{-#INLINABLE lineSplit #-}
+          case countNlUntil (n-counter) c of
+            Left !m   -> Chunk c (loop2 (counter+m) cs)
+            Right !ix -> Chunk (B.unsafeTake ix c) $
+                           Empty $ loop1 0 $ Chunk (B.unsafeDrop ix c) cs
+{-# INLINABLE lineSplit #-}
+
+-- counts the number of newlines in a strict bytestring until it reaches a specified limit, at which
+-- point it short-circuits and returns the length of the bytestring up to and including the nth newline
+-- 
+-- otherwise returns the number of newlines found in the entire bytestring if the count is not reached
+countNlUntil :: Int -> B.ByteString -> Either Int Int
+countNlUntil !n (B.PS fp off l) =
+    unsafeDupablePerformIO $ withForeignPtr fp $
+        \p -> loop (p `plusPtr` off) n 0 l
+  where
+    loop :: Ptr Word8 -> Int -> Int -> Int -> IO (Either Int Int)
+    loop !_ 0 !o !_ = return $ Right o
+    loop !p !i !o !l = do
+        !q <- B.memchr p 10 $ fromIntegral l -- 10 == ASCII newline
+        if q == nullPtr
+            then return $! Left $! n - i
+            else let !q' = q `plusPtr` 1
+                     !d  = q' `minusPtr` p
+                     !o'  = o + d
+                     !l' = l - d
+                  in loop q' (i-1) o' l'
+
 
 newline :: Word8
 newline = 10
