@@ -286,7 +286,7 @@ fromStrict bs | B.null bs = Empty ()
 -- Note that this is an /expensive/ operation that forces the whole monadic
 -- ByteString into memory and then copies all the data. If possible, try to
 -- avoid converting back and forth between streaming and strict bytestrings.
-toStrict_ :: Monad m => ByteStream m () -> m B.ByteString
+toStrict_ :: Monad m => ByteStream m r -> m B.ByteString
 toStrict_ = fmap B.concat . SP.toList_ . toChunks
 {-# INLINE toStrict_ #-}
 
